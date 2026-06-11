@@ -1,8 +1,7 @@
-# LLM Eval Platform 🚧 Work in Progress
+# LLM Eval Platform (Work in Progress)
 
 A mini RLHF evaluation platform built on GCP. The idea: instead of paying a commercial model to judge every LLM response, train your own reward model on human preference data and use it as the judge. Cheaper, faster, and you own it.
 
-> **Status:** Core pipeline is working end-to-end. Reward model trained (71.8% train accuracy, 61.3% eval accuracy on held-out set). Active development ongoing — see What's next for what's being worked on.
 
 ---
 
