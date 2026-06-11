@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+pydantic
+google-cloud-pubsub
+google-cloud-bigquery
+google-cloud-storage
+google-cloud-aiplatform
+transformers
+torch
+datasets
+wandb
+detoxify
+sentence-transformers
+python-dotenv

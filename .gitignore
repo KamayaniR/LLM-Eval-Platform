@@ -1,0 +1,44 @@
+# credentials and secrets
+.env
+*-key.json
+*.json.key
+service-account*.json
+/Users/*/llm-eval-key.json
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# virtual environments
+venv/
+env/
+.venv/
+
+# jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# wandb
+wandb/
+
+# model checkpoints (too large for github)
+*.pt
+*.bin
+*.safetensors
+checkpoints/
+
+# mac
+.DS_Store
+
+# ide
+.vscode/
+.idea/
+
+# logs
+*.log
+logs/

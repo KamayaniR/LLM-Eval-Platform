@@ -1,0 +1,7 @@
+transformers==4.44.0
+datasets
+wandb
+google-cloud-storage
+accelerate
+tiktoken
+sentencepiece

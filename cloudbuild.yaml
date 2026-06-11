@@ -1,0 +1,15 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '--platform'
+      - 'linux/amd64'
+      - '-f'
+      - 'Dockerfile.training'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/llm-eval-platform/llm-eval/trainer:v1'
+      - '.'
+images:
+  - 'us-central1-docker.pkg.dev/llm-eval-platform/llm-eval/trainer:v1'
+options:
+  machineType: 'E2_HIGHCPU_8'
