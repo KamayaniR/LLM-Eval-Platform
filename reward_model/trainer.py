@@ -8,14 +8,27 @@ import wandb
 import os
 
 def upload_to_gcs(local_path, gcs_path):
-    from google.cloud import storage
-    bucket_name = gcs_path.split("/")[2]
-    blob_path = "/".join(gcs_path.split("/")[3:])
-    client = storage.Client()
-    bucket = client.bucket(bucket_name)
-    blob = bucket.blob(blob_path)
-    blob.upload_from_filename(local_path)
-    print(f"Uploaded {local_path} to {gcs_path}")
+    try:
+        from google.cloud import storage
+        from google.oauth2 import service_account
+        import google.auth
+
+        try:
+            credentials, project = google.auth.default()
+        except Exception:
+            credentials = None
+
+        client = storage.Client(credentials=credentials)
+        bucket_name = gcs_path.split("/")[2]
+        blob_path = "/".join(gcs_path.split("/")[3:])
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(blob_path)
+        blob.upload_from_filename(local_path)
+        print(f"Uploaded {local_path} to {gcs_path}")
+        return True
+    except Exception as e:
+        print(f"GCS upload failed: {e}")
+        return False
 
 def compute_loss(chosen_rewards, rejected_rewards):
     return -F.logsigmoid(chosen_rewards - rejected_rewards).mean()
@@ -90,11 +103,15 @@ def train(
 
         local_ckpt = f"checkpoints/epoch_{epoch+1}.pt"
         torch.save(model.state_dict(), local_ckpt)
-        print(f"Saved checkpoint: {local_ckpt}")
+        print(f"Saved checkpoint locally: {local_ckpt}")
 
         if save_dir.startswith("gs://"):
             gcs_ckpt = f"{save_dir}/epoch_{epoch+1}.pt"
-            upload_to_gcs(local_ckpt, gcs_ckpt)
+            success = upload_to_gcs(local_ckpt, gcs_ckpt)
+            if success:
+                print(f"Checkpoint saved to GCS: {gcs_ckpt}")
+            else:
+                print(f"WARNING: GCS upload failed for epoch {epoch+1}. Checkpoint only saved locally.")
 
         model.eval()
         eval_loss, eval_acc = 0, 0
