@@ -212,8 +212,3 @@ python scripts/run_truthfulqa_eval.py gemini-2.5-flash
 - Factuality evaluator occasionally hits Vertex AI rate limits on large eval batches
 - Worker reloads Detoxify model on every restart — needs caching improvement
 
----
-
-## Author
-
-Kamayani Rai · [GitHub](https://github.com/KamayaniR) · [LinkedIn](https://linkedin.com/in/kamayanirai) · [Medium](https://medium.com/@kamayanirai771)
