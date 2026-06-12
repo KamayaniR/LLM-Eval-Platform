@@ -29,4 +29,5 @@ def run_eval(max_samples=50, model="gemini-2.5-flash"):
 
 if __name__ == "__main__":
     model = sys.argv[1] if len(sys.argv) > 1 else "gemini-2.5-flash"
-    run_eval(max_samples=50, model=model)
+    max_samples = int(sys.argv[2]) if len(sys.argv) > 2 else 50
+    run_eval(max_samples=max_samples, model=model)
