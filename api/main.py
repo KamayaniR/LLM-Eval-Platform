@@ -25,6 +25,14 @@ def startup_event():
 def health():
     return {"status": "ok"}
 
+@app.get("/sample-prompts")
+def sample_prompts():
+    from data.datasets.truthfulqa import load_truthfulqa
+    prompts = load_truthfulqa(max_samples=10)
+    return {
+        "prompts": [p["question"] for p in prompts]
+    }
+
 @app.post("/jobs", response_model=EvalJobResponse)
 def submit_job(request: EvalJobRequest):
     job_id = str(uuid.uuid4())
