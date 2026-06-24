@@ -1,7 +1,22 @@
-# LLM Eval Platform (Work in Progress)
+# LLM Eval Platform 🚧 Work in Progress
 
 A mini RLHF evaluation platform built on GCP. The idea: instead of paying a commercial model to judge every LLM response, train your own reward model on human preference data and use it as the judge. Cheaper, faster, and you own it.
 
+> **Status:** Core pipeline is working end-to-end. Reward model trained (71.8% train accuracy, 61.3% eval accuracy). React frontend built with model comparison and verdict summary. GCS checkpoint upload fix merged — verification pending on next training run.
+
+---
+
+## Demo
+
+Not deployed publicly to avoid uncontrolled API credit consumption. Run locally with the setup below.
+
+**What it looks like:**
+
+The platform has two views:
+
+**Submit job** — enter prompts, pick a model (Flash or Pro), submit. Results auto-poll and appear in ~30 seconds. Each prompt shows the response with four score dimensions.
+
+**Compare models** — pick a set of TruthfulQA questions (designed to expose hallucinations on common misconceptions) or enter your own custom prompts. Runs both models in parallel and shows a side-by-side metric breakdown with diffs and an automatic verdict on which model performed better.
 
 ---
 
@@ -9,46 +24,59 @@ A mini RLHF evaluation platform built on GCP. The idea: instead of paying a comm
 
 You submit a list of prompts and a model name. The platform:
 
-1. Sends each prompt to the LLM (Gemini Flash or Pro)
-2. Scores each response across four dimensions: toxicity, instruction following, factuality, and overall quality (reward model)
+1. Sends each prompt to the LLM (Gemini Flash or Pro) via Vertex AI
+2. Scores each response across four dimensions in parallel
 3. Stores results in BigQuery
-4. Shows everything in a Looker Studio dashboard
+4. Surfaces everything in the React frontend (job view + model comparison)
 
-The reward model is a DeBERTa-v3-base model trained from scratch on 160k human preference pairs from Anthropic's HH-RLHF dataset using Bradley-Terry loss. Training ran on Vertex AI on NVIDIA T4 GPUs using PyTorch FSDP.
+The reward model is a DeBERTa-v3-base model trained from scratch on 160k human preference pairs from Anthropic's HH-RLHF dataset using Bradley-Terry loss. Training ran on Vertex AI on NVIDIA T4 GPUs.
 
 ---
 
 ## Architecture
 
 ```
-User
+React frontend (Vite + Tailwind)
   │
-  ▼
-Cloud Run API (FastAPI)
-  │
-  ├── POST /jobs      → publishes to Pub/Sub, returns job_id
-  ├── GET /jobs/{id}  → job status from BigQuery
-  └── GET /results/{id} → scores from BigQuery
+  ├── Submit job → POST /jobs
+  ├── View results → GET /results/{id}
+  └── Compare models → parallel jobs + verdict
 
-Pub/Sub (eval-jobs)
+FastAPI (Cloud Run — local for now)
   │
-  ▼
-Worker (background thread in Cloud Run)
-  │
-  ├── Gemini runner → gets LLM response
-  └── Scorer (parallel)
-        ├── Reward model  → DeBERTa trained on HH-RLHF
-        ├── Toxicity      → Detoxify
-        ├── Instruction   → rule-based
-        └── Factuality    → Gemini-as-judge
+  ├── Inserts job to BigQuery
+  └── Publishes to Pub/Sub
 
-BigQuery (llm_eval)
+Pub/Sub (eval-jobs topic)
+  │
+  └── Worker thread (background)
+        │
+        ├── Gemini runner → response
+        └── Scorer (parallel, ThreadPoolExecutor)
+              ├── Reward model   → DeBERTa trained on HH-RLHF (0.4 weight)
+              ├── Factuality     → Gemini-as-judge, retry + cache (0.25 weight)
+              ├── Instruction    → rule-based (0.2 weight)
+              └── Toxicity       → Detoxify (0.15 weight)
+
+BigQuery (llm_eval dataset)
   ├── eval_jobs
   ├── eval_results
   └── preference_labels
 
-Looker Studio → dashboard
+Offline training pipeline (Vertex AI)
+  └── DeBERTa + Bradley-Terry → GCS checkpoint → reward model evaluator
 ```
+
+---
+
+## Evaluation dimensions
+
+| Dimension | Method | Weight | What it measures |
+|---|---|---|---|
+| Reward | DeBERTa-v3-base, HH-RLHF | 40% | Overall response quality as humans would judge it |
+| Factuality | Gemini-2.5-flash as judge | 25% | Accuracy of factual claims |
+| Instruction | Rule-based | 20% | Format compliance, length, relevance |
+| Toxicity | Detoxify | 15% | Safety of language |
 
 ---
 
@@ -56,21 +84,20 @@ Looker Studio → dashboard
 
 | Component | Technology |
 |---|---|
-| Reward model | DeBERTa-v3-base, PyTorch FSDP |
+| Frontend | React, Vite, Tailwind v4 |
+| Reward model | DeBERTa-v3-base, PyTorch, Bradley-Terry loss |
 | Distributed training | Vertex AI Custom Training, NVIDIA T4 |
 | Training data | Anthropic HH-RLHF (160k preference pairs) |
-| API | FastAPI, Cloud Run |
+| API | FastAPI |
 | Job queue | Pub/Sub |
 | Storage | BigQuery, Google Cloud Storage |
-| LLM inference | Vertex AI (Gemini Flash, Gemini Pro) |
-| Dashboard | Looker Studio |
+| LLM inference | Vertex AI (Gemini 2.5 Flash, Gemini 2.5 Pro) |
 | Container registry | Artifact Registry |
+| Experiment tracking | Weights & Biases |
 
 ---
 
 ## Training results
-
-The reward model was trained for 3 epochs on 160k preference pairs using Bradley-Terry loss:
 
 | Epoch | Train loss | Train accuracy | Eval accuracy |
 |---|---|---|---|
@@ -78,20 +105,21 @@ The reward model was trained for 3 epochs on 160k preference pairs using Bradley
 | 2 | 0.5920 | 66.40% | 59.92% |
 | 3 | 0.5254 | 71.78% | 61.31% |
 
-Trained on a single NVIDIA T4 GPU on Vertex AI. Loss curves and GPU utilization tracked in W&B:
-`kamayanirai771-arizona-state-university/llm-eval-platform`
+Trained on a single NVIDIA T4 GPU on Vertex AI. Loss curves and GPU utilization tracked in W&B: `kamayanirai771-arizona-state-university/llm-eval-platform`
 
 ---
 
-## Eval results (TruthfulQA)
+## Eval results (TruthfulQA — Flash vs Pro)
 
-Ran 50 questions from TruthfulQA — a benchmark designed to expose model hallucinations — through Gemini 2.5 Flash:
+Ran 100 questions from TruthfulQA on both models:
 
-- Factuality scores ranged from 0.25 to 1.0 (not all 1.0 like simple factual questions)
-- Composite scores ranged from 0.69 to 0.9999
-- Questions on contested or ambiguous topics scored below 0.75
+| Metric | Gemini 2.5 Flash | Gemini 2.5 Pro |
+|---|---|---|
+| Composite | 0.9818 | 0.9805 |
+| Factuality | 0.9745 | 0.9821 |
+| Toxicity | 0.9886 | 0.9875 |
 
-*Gemini Pro comparison in progress.*
+Pro scores slightly higher on factuality (more capable model). Flash scores marginally higher on overall composite. Differences are small — both models handle common misconceptions reasonably well on this benchmark.
 
 ---
 
@@ -99,35 +127,43 @@ Ran 50 questions from TruthfulQA — a benchmark designed to expose model halluc
 
 ```
 llm-eval-platform/
+├── frontend/                    # React + Vite + Tailwind frontend
+│   └── src/
+│       ├── App.jsx
+│       └── components/
+│           ├── JobSubmit.jsx
+│           ├── JobList.jsx
+│           ├── ResultsView.jsx
+│           └── CompareView.jsx  # model comparison + verdict
 ├── api/
-│   ├── main.py              # FastAPI app
-│   └── schemas.py           # Pydantic models
+│   ├── main.py                  # FastAPI app + /sample-prompts endpoint
+│   └── schemas.py
 ├── evaluators/
 │   ├── base.py
-│   ├── toxicity.py          # Detoxify
-│   ├── instruction.py       # rule-based
-│   ├── factuality.py        # Gemini-as-judge
-│   └── reward_model.py      # DeBERTa checkpoint (WIP)
+│   ├── toxicity.py              # Detoxify
+│   ├── instruction.py           # rule-based
+│   ├── factuality.py            # Gemini-as-judge + retry/cache
+│   └── reward_model.py          # DeBERTa checkpoint (WIP — checkpoint upload fix merged)
 ├── reward_model/
-│   ├── model.py             # DeBERTa + scalar head
-│   ├── dataset.py           # HH-RLHF loader
-│   └── trainer.py           # Bradley-Terry training loop
+│   ├── model.py                 # DeBERTa-v3-base + scalar head
+│   ├── dataset.py               # HH-RLHF loader
+│   └── trainer.py               # Bradley-Terry training loop + GCS upload
 ├── runners/
-│   └── gemini.py            # Vertex AI Gemini runner
+│   └── gemini.py                # Vertex AI Gemini runner
 ├── pipeline/
-│   ├── worker.py            # Pub/Sub subscriber
-│   ├── scorer.py            # parallel evaluator orchestration
-│   └── logger.py            # BigQuery writer
+│   ├── worker.py                # Pub/Sub subscriber, loads evaluators once
+│   ├── scorer.py                # parallel evaluator orchestration
+│   └── logger.py                # BigQuery writer
 ├── data/
 │   └── datasets/
-│       └── truthfulqa.py    # TruthfulQA loader
+│       └── truthfulqa.py        # TruthfulQA loader (817 questions)
 ├── scripts/
-│   └── run_truthfulqa_eval.py
+│   └── run_truthfulqa_eval.py   # submit TruthfulQA batch (configurable size)
 ├── infra/
 │   ├── vertex_training_job.py
 │   └── bigquery_schema.json
-├── Dockerfile.training      # training container (CUDA + FSDP)
-├── cloudbuild.yaml          # Cloud Build config
+├── Dockerfile.training
+├── cloudbuild.yaml
 ├── requirements.txt
 └── requirements-train.txt
 ```
@@ -140,6 +176,7 @@ llm-eval-platform/
 - GCP project with billing enabled
 - gcloud CLI installed and authenticated
 - Python 3.11+
+- Node 18+
 
 ### 1. Clone and configure
 
@@ -147,7 +184,7 @@ llm-eval-platform/
 git clone https://github.com/KamayaniR/llm-eval-platform.git
 cd llm-eval-platform
 cp .env.example .env
-# fill in your values
+# fill in: PROJECT_ID, GCS_BUCKET, WANDB_API_KEY, GEMINI_API_KEY
 ```
 
 ### 2. Enable GCP APIs
@@ -170,24 +207,26 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. Run the API locally
+### 4. Run the API
 
 ```bash
 python -m uvicorn api.main:app --port 8080
 ```
 
-### 5. Submit an eval job
+### 5. Run the frontend
 
 ```bash
-curl -X POST http://localhost:8080/jobs \
-  -H "Content-Type: application/json" \
-  -d '{"prompts": ["What is the capital of France?"], "model": "gemini-2.5-flash"}'
+cd frontend
+npm install
+npm run dev
+# opens at http://localhost:5173
 ```
 
 ### 6. Run TruthfulQA eval
 
 ```bash
-python scripts/run_truthfulqa_eval.py gemini-2.5-flash
+python scripts/run_truthfulqa_eval.py gemini-2.5-flash 50
+python scripts/run_truthfulqa_eval.py gemini-2.5-pro 50
 ```
 
 ---
@@ -195,20 +234,22 @@ python scripts/run_truthfulqa_eval.py gemini-2.5-flash
 ## What's next
 
 **In progress**
-- Fix GCS checkpoint upload so reward scores are populated end-to-end (currently null)
-- Run Gemini Flash vs Pro comparison on the full TruthfulQA dataset
-- Deploy API to Cloud Run (currently runs locally only)
+- Verify GCS checkpoint upload fix on a new Vertex AI training run — once confirmed, reward scores will populate in eval results
+- Cloud Run deployment with bring-your-own-API-key auth gate (to allow public usage without exposing GCP credits)
 
-**Planned improvements**
-- Faster training: increase to batch_size=32, use 2 GPU replicas, reduce sequence length from 256 to 128 tokens — combined this should cut training time by ~4x
-- React frontend for job submission, result visualization, and model comparison
-- Use a separate model family for factuality judging (currently Gemini judging Gemini is circular)
-- Add MMLU benchmark support
-- Cloud Scheduler for automatic retraining when new preference labels accumulate
-- Vertex AI Vector Search for failure clustering — group low-scoring responses by semantic similarity to identify failure patterns
+**Planned**
+- Faster training: batch_size=32, 2 GPU replicas, seq_len=128 → ~4x speedup
+- Multi-model support: add Claude and GPT-4 runners alongside Gemini
+- MMLU benchmark support
+- Cloud Scheduler for automatic retraining when preference labels accumulate
 
 **Known issues**
-- GCS checkpoint upload fails silently in Vertex AI training container — explicit ADC setup needed
-- Factuality evaluator occasionally hits Vertex AI rate limits on large eval batches
-- Worker reloads Detoxify model on every restart — needs caching improvement
+- GCS checkpoint upload fails silently in Vertex AI container — fix merged in PR #1, needs verification
+- Factuality evaluator occasionally hits rate limits on very large batches (>100 prompts) despite retry logic
+- Reward score shows null until checkpoint is verified and wired in
 
+---
+
+## Author
+
+Kamayani Rai · [GitHub](https://github.com/KamayaniR) · [LinkedIn](https://linkedin.com/in/kamayanirai) · [Medium](https://medium.com/@kamayanirai771)
