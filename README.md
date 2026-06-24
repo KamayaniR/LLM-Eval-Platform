@@ -1,4 +1,4 @@
-# LLM Eval Platform 🚧 Work in Progress
+# LLM Eval Platform - Work in Progress
 
 A mini RLHF evaluation platform built on GCP. The idea: instead of paying a commercial model to judge every LLM response, train your own reward model on human preference data and use it as the judge. Cheaper, faster, and you own it.
 
@@ -105,7 +105,7 @@ Offline training pipeline (Vertex AI)
 | 2 | 0.5920 | 66.40% | 59.92% |
 | 3 | 0.5254 | 71.78% | 61.31% |
 
-Trained on a single NVIDIA T4 GPU on Vertex AI. Loss curves and GPU utilization tracked in W&B: `kamayanirai771-arizona-state-university/llm-eval-platform`
+Trained on a single NVIDIA T4 GPU on Vertex AI.
 
 ---
 
@@ -248,8 +248,4 @@ python scripts/run_truthfulqa_eval.py gemini-2.5-pro 50
 - Factuality evaluator occasionally hits rate limits on very large batches (>100 prompts) despite retry logic
 - Reward score shows null until checkpoint is verified and wired in
 
----
 
-## Author
-
-Kamayani Rai · [GitHub](https://github.com/KamayaniR) · [LinkedIn](https://linkedin.com/in/kamayanirai) · [Medium](https://medium.com/@kamayanirai771)
